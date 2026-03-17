@@ -1,30 +1,40 @@
-
 const analyzeBtn = document.getElementById('analyzeBtn');
 const neutralRewriteToggle = document.getElementById('neutralRewriteToggle');
+
 const statusCard = document.getElementById('statusCard');
 const statusTitle = document.getElementById('statusTitle');
 const statusText = document.getElementById('statusText');
 const progressWrap = document.getElementById('progressWrap');
 const progressFill = document.getElementById('progressFill');
+
 const resultCard = document.getElementById('resultCard');
+
 const mainScoreValue = document.getElementById('mainScoreValue');
 const mainScoreBadge = document.getElementById('mainScoreBadge');
 const quotedScoreValue = document.getElementById('quotedScoreValue');
 const quotedScoreBadge = document.getElementById('quotedScoreBadge');
+
+const articleIssueStance = document.getElementById('articleIssueStance');
+const quotedIssueStance = document.getElementById('quotedIssueStance');
+
 const stanceValue = document.getElementById('stanceValue');
 const confidenceValue = document.getElementById('confidenceValue');
-const languageValue = document.getElementById('languageValue');
-const translationValue = document.getElementById('translationValue');
+
 const mainPatternsList = document.getElementById('mainPatternsList');
 const quotedPatternsList = document.getElementById('quotedPatternsList');
 const explanationText = document.getElementById('explanationText');
 const authorSegmentsList = document.getElementById('authorSegmentsList');
 const quotedSegmentsList = document.getElementById('quotedSegmentsList');
+
 const rewriteBlock = document.getElementById('rewriteBlock');
 const rewriteText = document.getElementById('rewriteText');
+
 const rawText = document.getElementById('rawText');
 const translatedText = document.getElementById('translatedText');
 const autoStatus = document.getElementById('autoStatus');
+
+const feedbackButtonsWrap = document.getElementById('feedbackButtons');
+const feedbackThanks = document.getElementById('feedbackThanks');
 
 const PATTERN_LABELS = {
   people_vs_elite: 'People vs. elite',
@@ -39,11 +49,13 @@ const PATTERN_LABELS = {
 
 let activeTabId = null;
 let activeTabUrl = null;
+let activeRecord = null;
 
 function setStatus(title, text = '', progress = null) {
   statusCard.classList.remove('hidden');
   statusTitle.textContent = title;
   statusText.textContent = text;
+
   if (typeof progress === 'number') {
     progressWrap.classList.remove('hidden');
     progressFill.style.width = `${Math.max(0, Math.min(100, progress * 100))}%`;
@@ -87,9 +99,10 @@ function patternListText(pattern) {
 function renderPatternChips(container, patterns, emptyText) {
   container.innerHTML = '';
   if (!patterns?.length) {
-    container.innerHTML = `<span class="chip">${emptyText}</span>`;
+    container.textContent = emptyText;
     return;
   }
+
   for (const pattern of patterns) {
     const chip = document.createElement('span');
     chip.className = 'chip';
@@ -100,6 +113,7 @@ function renderPatternChips(container, patterns, emptyText) {
 
 function renderSegments(container, items, emptyText) {
   container.innerHTML = '';
+
   if (!items.length) {
     const li = document.createElement('li');
     li.textContent = emptyText;
@@ -110,6 +124,7 @@ function renderSegments(container, items, emptyText) {
   for (const item of items) {
     const li = document.createElement('li');
     const parts = [`“${item.text}”`, patternListText(item.pattern)];
+
     if (item.source_type === 'quoted' || item.source_type === 'paraphrased') {
       const stanceMap = {
         endorsed: 'endorsed',
@@ -118,23 +133,99 @@ function renderSegments(container, items, emptyText) {
       };
       parts.push(stanceMap[item.stance] || item.stance);
     } else if (item.affects_main_score) {
-      parts.push('affects main score');
+      parts.push('affects article score');
     }
+
     li.textContent = parts.join(' — ');
     container.appendChild(li);
   }
 }
 
+function shouldShowIssueStance(confidence) {
+  return confidence === 'medium' || confidence === 'high';
+}
+
+function renderIssueStance(el, topic, stance, confidence, prefix) {
+  const hasTopic = Boolean(topic && topic.trim());
+  const hasStance = Boolean(stance && stance.trim());
+
+  if (!hasTopic || !hasStance || !shouldShowIssueStance(confidence)) {
+    el.classList.add('hidden');
+    el.textContent = '';
+    return;
+  }
+
+  el.textContent = `${prefix} on ${topic}: ${stance}`;
+  el.classList.remove('hidden');
+}
+
+function resetFeedbackUi() {
+  feedbackButtonsWrap.classList.remove('hidden');
+  feedbackThanks.classList.add('hidden');
+}
+
+async function saveFeedback(feedbackType) {
+  if (!activeRecord || !activeRecord.analysis) return;
+
+  const manifest = chrome.runtime.getManifest();
+  const existing = await chrome.storage.local.get('rhetoricFeedbackLog');
+  const log = Array.isArray(existing.rhetoricFeedbackLog) ? existing.rhetoricFeedbackLog : [];
+
+  const payload = {
+    timestamp: Date.now(),
+    feedback_type: feedbackType,
+    url: activeRecord.url || activeTabUrl || '',
+    domain: (() => {
+      try {
+        return new URL(activeRecord.url || activeTabUrl || '').hostname;
+      } catch {
+        return '';
+      }
+    })(),
+    page_title: activeRecord.extraction?.title || '',
+    tab_id: activeTabId,
+    extension_version: manifest.version,
+    analysis_version: 'issue-stance-v1',
+    prompt_version: 'issue-stance-v1',
+    detected_language: activeRecord.detectedLanguage || 'unknown',
+    via_translation: Boolean(activeRecord.viaTranslation),
+    extracted_text: activeRecord.extraction?.extractedText || '',
+    translated_text: activeRecord.englishText || '',
+    extraction_meta: {
+      title: activeRecord.extraction?.title || '',
+      url: activeRecord.extraction?.url || '',
+      quote_count_estimate: activeRecord.extraction?.quoteCount ?? null,
+      extraction_length: (activeRecord.extraction?.extractedText || '').length
+    },
+    model_output: activeRecord.analysis
+  };
+
+  log.unshift(payload);
+  const trimmed = log.slice(0, 500);
+
+  await chrome.storage.local.set({
+    rhetoricFeedbackLog: trimmed
+  });
+}
+
 function renderAnalysis(record) {
+  activeRecord = record;
+
   const result = record.analysis;
   const sourceText = record.extraction?.extractedText || '';
   const englishText = record.englishText || sourceText;
-  const detectedLanguage = record.detectedLanguage || 'unknown';
   const viaTranslation = Boolean(record.viaTranslation);
+  const normalizedConfidence = normalizeConfidence(result.confidence, viaTranslation);
 
   resultCard.classList.remove('hidden');
+
   clearScoreClasses(mainScoreValue, mainScoreBadge);
-  clearScoreClasses(quotedScoreValue, quotedScoreBadge, 'score-value secondary-score', 'badge badge-secondary');
+  clearScoreClasses(
+    quotedScoreValue,
+    quotedScoreBadge,
+    'score-value secondary-score',
+    'badge badge-secondary'
+  );
 
   const [mainBand, mainScoreClass, mainBadgeClass] = scoreBand(result.main_page_score);
   mainScoreValue.textContent = `${Math.round(result.main_page_score)}`;
@@ -149,18 +240,38 @@ function renderAnalysis(record) {
   quotedScoreBadge.classList.add(quotedBadgeClass);
 
   stanceValue.textContent = titleCase(result.article_stance);
-  confidenceValue.textContent = normalizeConfidence(result.confidence, viaTranslation);
-  languageValue.textContent = detectedLanguage;
-  translationValue.textContent = viaTranslation ? 'yes' : 'no';
+  confidenceValue.textContent = normalizedConfidence;
 
-  renderPatternChips(mainPatternsList, result.main_page_patterns, 'No strong authorial pattern');
+  renderIssueStance(
+    articleIssueStance,
+    result.issue_topic,
+    result.issue_stance,
+    result.issue_stance_confidence,
+    'Stance'
+  );
+
+  renderIssueStance(
+    quotedIssueStance,
+    result.issue_topic,
+    result.quoted_issue_stance,
+    result.quoted_issue_stance_confidence,
+    'Quoted stance'
+  );
+
+  renderPatternChips(mainPatternsList, result.main_page_patterns, 'No strong article pattern');
   renderPatternChips(quotedPatternsList, result.quoted_patterns, 'No strong quoted pattern');
 
   explanationText.textContent = result.short_explanation || 'No explanation returned.';
 
-  const authorialSegments = (result.flagged_segments || []).filter((item) => item.source_type === 'authorial' || item.affects_main_score);
-  const quotedSegments = (result.flagged_segments || []).filter((item) => item.source_type !== 'authorial' && !item.affects_main_score);
-  renderSegments(authorSegmentsList, authorialSegments, 'No main-page segment was highlighted.');
+  const authorialSegments = (result.flagged_segments || []).filter(
+    (item) => item.source_type === 'authorial' || item.affects_main_score
+  );
+
+  const quotedSegments = (result.flagged_segments || []).filter(
+    (item) => item.source_type !== 'authorial' && !item.affects_main_score
+  );
+
+  renderSegments(authorSegmentsList, authorialSegments, 'No article segment was highlighted.');
   renderSegments(quotedSegmentsList, quotedSegments, 'No quoted or attributed segment was highlighted.');
 
   const rewrite = (result.neutral_rewrite || '').trim();
@@ -176,13 +287,17 @@ function renderAnalysis(record) {
   translatedText.textContent = englishText;
 
   autoStatus.textContent = `Auto-analyzed ${timeAgo(record.updatedAt)}.`;
+  resetFeedbackUi();
   hideStatus();
 }
 
 function renderError(record) {
+  activeRecord = record || null;
   resultCard.classList.add('hidden');
-  setStatus('Analysis failed', record.error || 'Unknown error');
-  autoStatus.textContent = record.updatedAt ? `Last attempt ${timeAgo(record.updatedAt)}.` : 'Auto-analysis failed.';
+  setStatus('Analysis failed', record?.error || 'Unknown error');
+  autoStatus.textContent = record?.updatedAt
+    ? `Last attempt ${timeAgo(record.updatedAt)}.`
+    : 'Auto-analysis failed.';
 }
 
 function timeAgo(timestamp) {
@@ -205,7 +320,11 @@ async function getActiveTab() {
 
 async function loadExistingAnalysis() {
   const tab = await getActiveTab();
-  const response = await chrome.runtime.sendMessage({ type: 'GET_TAB_ANALYSIS', tabId: tab.id });
+  const response = await chrome.runtime.sendMessage({
+    type: 'GET_TAB_ANALYSIS',
+    tabId: tab.id
+  });
+
   const record = response?.record;
 
   if (!record) {
@@ -221,69 +340,85 @@ async function loadExistingAnalysis() {
   }
 
   if (record.url && activeTabUrl && record.url !== activeTabUrl) {
-    setStatus('Analyzing current page', 'A new page is loading in this tab. The previous result is being replaced.');
-    autoStatus.textContent = 'Auto-analysis pending.';
+    setStatus('Analyzing current page', 'A new page is loading in this tab. Reload the popup in a moment.');
+    autoStatus.textContent = 'Current page analysis pending.';
     return;
   }
 
-  if (record.error) {
+  if (record.status === 'error') {
     renderError(record);
     return;
   }
 
-  if (record.analysis) {
+  if (record.status === 'ready' && record.analysis) {
     renderAnalysis(record);
     return;
   }
 
-  setStatus('Waiting for auto-analysis', 'The current tab is still being analyzed.');
-  autoStatus.textContent = 'Auto-analysis pending.';
+  setStatus('Waiting for current page', 'A previous page analysis is cached. Reload the popup in a moment.');
 }
 
 async function rerunAnalysis() {
-  analyzeBtn.disabled = true;
-  resultCard.classList.add('hidden');
-  setStatus('Re-running analysis', 'Running a fresh local analysis for the current tab.');
-  autoStatus.textContent = 'Manual refresh in progress.';
-
   try {
+    analyzeBtn.disabled = true;
+    setStatus('Starting analysis', 'Extracting page content...');
     const tab = await getActiveTab();
+
     const response = await chrome.runtime.sendMessage({
-      type: 'ANALYZE_TAB_NOW',
+      type: 'ANALYZE_ACTIVE_TAB',
       tabId: tab.id,
-      includeRewrite: neutralRewriteToggle.checked
+      includeRewrite: Boolean(neutralRewriteToggle.checked),
+      force: true
     });
 
-    if (response?.error) throw new Error(response.error);
-    const record = response?.record;
-    if (!record) throw new Error('No analysis result returned.');
-    if (record.error) {
-      renderError(record);
-    } else {
-      renderAnalysis(record);
+    if (!response?.ok) {
+      throw new Error(response?.error || 'Analysis failed.');
     }
+
+    renderAnalysis(response.record);
   } catch (error) {
-    setStatus('Analysis failed', error.message || String(error));
+    renderError({
+      error: error.message || String(error),
+      updatedAt: Date.now()
+    });
   } finally {
     analyzeBtn.disabled = false;
   }
 }
 
-analyzeBtn.addEventListener('click', rerunAnalysis);
-loadExistingAnalysis().catch((error) => {
-  setStatus('Could not initialize popup', error.message || String(error));
+chrome.runtime.onMessage.addListener((message) => {
+  if (!message || message.type !== 'TAB_ANALYSIS_UPDATED') return;
+
+  if (message.tabId !== activeTabId) return;
+  if (message.record?.url && activeTabUrl && message.record.url !== activeTabUrl) return;
+
+  if (message.record?.status === 'ready') {
+    renderAnalysis(message.record);
+  } else if (message.record?.status === 'error') {
+    renderError(message.record);
+  } else if (['loading', 'pending', 'analyzing'].includes(message.record?.status)) {
+    setStatus('Analyzing current page', 'The current tab is loading or being analyzed locally.');
+  }
 });
 
-chrome.runtime.onMessage.addListener((message) => {
-  if (message?.type !== 'ANALYSIS_UPDATED') return;
-  if (message.tabId !== activeTabId) return;
+analyzeBtn.addEventListener('click', rerunAnalysis);
 
-  const record = message.record;
-  if (record?.url && activeTabUrl && record.url !== activeTabUrl) return;
+document.querySelectorAll('.feedback-btn').forEach((btn) => {
+  btn.addEventListener('click', async () => {
+    const feedbackType = btn.dataset.feedback;
+    try {
+      await saveFeedback(feedbackType);
+      feedbackButtonsWrap.classList.add('hidden');
+      feedbackThanks.classList.remove('hidden');
+    } catch (error) {
+      console.error('Failed to save feedback:', error);
+    }
+  });
+});
 
-  if (record?.error) {
-    renderError(record);
-  } else if (record?.analysis) {
-    renderAnalysis(record);
-  }
+loadExistingAnalysis().catch((error) => {
+  renderError({
+    error: error.message || String(error),
+    updatedAt: Date.now()
+  });
 });
