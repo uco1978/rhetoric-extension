@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Rhetoric Lens</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main class="app">
+    <header class="header">
+      <h1>Rhetoric Lens</h1>
+      <p class="subhead">Authorial rhetoric on the badge. Quoted rhetoric in the breakdown.</p>
+    </header>
+
+    <section class="controls card">
+      <button id="analyzeBtn" class="primary">Re-run analysis</button>
+      <label class="toggle-row">
+        <input type="checkbox" id="neutralRewriteToggle">
+        <span>Generate neutral rewrite</span>
+      </label>
+      <p id="autoStatus" class="hint">Auto-analysis enabled for newly loaded pages.</p>
+    </section>
+
+    <section id="statusCard" class="status card hidden">
+      <div id="statusTitle" class="status-title">Preparing…</div>
+      <div id="statusText" class="status-text"></div>
+      <div id="progressWrap" class="progress-wrap hidden">
+        <div class="progress-bar">
+          <div id="progressFill" class="progress-fill"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="resultCard" class="result card hidden">
+      <div class="score-grid">
+        <div class="score-panel">
+          <div class="label">Main page score</div>
+          <div id="mainScoreValue" class="score-value">—</div>
+          <div id="mainScoreBadge" class="badge">—</div>
+        </div>
+        <div class="score-panel secondary-score-panel">
+          <div class="label">Quoted rhetoric</div>
+          <div id="quotedScoreValue" class="score-value secondary-score">—</div>
+          <div id="quotedScoreBadge" class="badge badge-secondary">—</div>
+        </div>
+      </div>
+
+      <div class="meta-grid meta-grid-4">
+        <div>
+          <div class="label">Article stance</div>
+          <div id="stanceValue">—</div>
+        </div>
+        <div>
+          <div class="label">Confidence</div>
+          <div id="confidenceValue">—</div>
+        </div>
+        <div>
+          <div class="label">Source language</div>
+          <div id="languageValue">—</div>
+        </div>
+        <div>
+          <div class="label">Via translation</div>
+          <div id="translationValue">—</div>
+        </div>
+      </div>
+
+      <div class="patterns-grid">
+        <div>
+          <div class="label">Main page patterns</div>
+          <div id="mainPatternsList" class="chips"></div>
+        </div>
+        <div>
+          <div class="label">Quoted patterns</div>
+          <div id="quotedPatternsList" class="chips"></div>
+        </div>
+      </div>
+
+      <div>
+        <div class="label">Why it was flagged</div>
+        <p id="explanationText" class="explanation"></p>
+      </div>
+
+      <div class="segments-grid">
+        <div>
+          <div class="label">Main page segments</div>
+          <ul id="authorSegmentsList" class="phrases"></ul>
+        </div>
+        <div>
+          <div class="label">Quoted / attributed segments</div>
+          <ul id="quotedSegmentsList" class="phrases"></ul>
+        </div>
+      </div>
+
+      <div id="rewriteBlock" class="hidden">
+        <div class="label">Neutral rewrite</div>
+        <p id="rewriteText" class="rewrite"></p>
+      </div>
+
+      <details class="debug-panel">
+        <summary>Debug details</summary>
+        <div class="debug-grid">
+          <div>
+            <div class="label">Extracted text</div>
+            <pre id="rawText"></pre>
+          </div>
+          <div>
+            <div class="label">Translated text</div>
+            <pre id="translatedText"></pre>
+          </div>
+        </div>
+      </details>
+    </section>
+  </main>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>
